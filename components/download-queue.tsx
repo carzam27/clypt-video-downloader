@@ -183,7 +183,7 @@ export function DownloadQueue({
                       </div>
                     )}
                     {item.status === 'complete' && <p className="text-xs text-green-600 dark:text-green-400 font-semibold mt-0.5">Ready to save · {item.format.toUpperCase()}</p>}
-                    {item.status === 'error' && <p className="text-xs text-destructive font-medium mt-0.5 truncate">{item.error || 'Download failed'}</p>}
+                    {item.status === 'error' && <p className="text-xs text-destructive font-medium mt-0.5 line-clamp-3 break-words" title={item.error}>{item.error || 'Download failed'}</p>}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     {item.status === 'complete' && <Button size="sm" className="h-8 px-3 text-xs rounded-xl font-bold" onClick={() => onDownloadFile(item.jobId)}><Download className="w-3.5 h-3.5 mr-1" />Save</Button>}

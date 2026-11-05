@@ -1,5 +1,5 @@
 import { execFile } from 'child_process';
-import { ytDlpPath, parseFormats, isAudioFormat } from '@/lib/ytdlp';
+import { ytDlpPath, parseFormats, pickRecommended, isHttpUrl, ytDlpCommonArgs, ytDlpErrorMessage } from '@/lib/ytdlp';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,18 +17,22 @@ interface RawVideoInfo {
   formats?: Array<{
     format_id: string; ext: string; height?: number;
     filesize?: number; filesize_approx?: number;
-    vcodec?: string; acodec?: string; abr?: number;
+    vcodec?: string; acodec?: string; abr?: number; tbr?: number;
   }>;
 }
 
-function fetchVideoInfo(url: string, format: string, allowPlaylist: boolean) {
+function fetchVideoInfo(url: string, format: string, allowPlaylist: boolean, whatsapp: boolean) {
   return new Promise<any[]>((resolve, reject) => {
-    const args = ['--dump-json'];
+    const args = [...ytDlpCommonArgs(), '--dump-json'];
     if (!allowPlaylist) args.push('--no-playlist');
     args.push(url);
 
-    const proc = execFile(ytDlpPath(), args, { maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
-      if (err) { reject(new Error(err.message.split('\n')[0])); return; }
+    const proc = execFile(ytDlpPath(), args, { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) {
+        console.error('[clypt] yt-dlp metadata failed for', url, '\n', String(stderr).slice(-2000) || err.message);
+        reject(new Error(ytDlpErrorMessage(String(stderr), err.message.split('\n')[0])));
+        return;
+      }
       try {
         const lines = stdout.trim().split('\n').filter(Boolean);
         const videos = lines.map(line => {
@@ -44,6 +48,7 @@ function fetchVideoInfo(url: string, format: string, allowPlaylist: boolean) {
             description: info.description ? info.description.slice(0, 500) : null,
             likeCount: info.like_count ?? null,
             formats: parseFormats(info.formats ?? [], format),
+            recommended: pickRecommended(info.formats ?? [], format, { whatsapp, duration: info.duration }),
             error: null,
           };
         });
@@ -55,10 +60,10 @@ function fetchVideoInfo(url: string, format: string, allowPlaylist: boolean) {
 }
 
 export async function POST(req: Request) {
-  let body: { urls?: string[]; format?: string; allowPlaylist?: boolean };
+  let body: { urls?: string[]; format?: string; allowPlaylist?: boolean; whatsapp?: boolean };
   try { body = await req.json(); } catch { return Response.json({ error: 'Invalid JSON' }, { status: 400 }); }
 
-  const { urls, format = 'mp4', allowPlaylist = false } = body;
+  const { urls, format = 'mp4', allowPlaylist = false, whatsapp = false } = body;
   if (!urls || !Array.isArray(urls) || urls.length === 0) {
     return Response.json({ error: 'urls array required' }, { status: 400 });
   }
@@ -67,7 +72,8 @@ export async function POST(req: Request) {
   const rawResults = await Promise.all(
     dedupedUrls.map(async (url) => {
       try {
-        return await fetchVideoInfo(url, format, !!allowPlaylist);
+        if (!isHttpUrl(url)) throw new Error('Invalid link: it must start with http:// or https://');
+        return await fetchVideoInfo(url, format, !!allowPlaylist, !!whatsapp);
       } catch (err) {
         return [{
           url, title: url, thumbnail: null, duration: null, uploader: null,

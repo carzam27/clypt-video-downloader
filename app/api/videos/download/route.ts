@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
-import { ytDlpPath, ffmpegPath, isAudioFormat, cleanOldTempFiles } from '@/lib/ytdlp';
+import { ytDlpPath, ffmpegPath, isAudioFormat, cleanOldTempFiles, ffmpegLocationArgs, ytDlpCommonArgs, ytDlpErrorMessage, ensureQuickTimeCompatible, isHttpUrl } from '@/lib/ytdlp';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,14 +32,18 @@ function convertToGif(inputPath: string, outputPath: string): Promise<void> {
 export async function POST(req: Request) {
   try { cleanOldTempFiles(); } catch {}
 
-  let body: Record<string, string>;
+  let body: Record<string, string | boolean | undefined>;
   try { body = await req.json(); } catch {
     return Response.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const { url, format, formatId, audioQuality, startTime, endTime } = body;
+  const { url, format, formatId, audioQuality, startTime, endTime, whatsapp } = body as Record<string, string> & { whatsapp?: boolean };
   if (!url || !format || !formatId) {
     return Response.json({ error: 'url, format and formatId are required' }, { status: 400 });
+  }
+
+  if (!isHttpUrl(url)) {
+    return Response.json({ error: 'Invalid link: it must start with http:// or https://' }, { status: 400 });
   }
 
   const jobId = randomUUID();
@@ -50,10 +54,11 @@ export async function POST(req: Request) {
   const outputTemplate = path.join(tmpDir, `clypt-%(title).50s-${jobId}.%(ext)s`);
 
   const args: string[] = [
+    ...ytDlpCommonArgs(),
     '--no-playlist', '-f', formatId,
     '-o', outputTemplate,
     '--print', 'after_move:filepath', '--newline',
-    '--ffmpeg-location', path.dirname(ffmpegPath()),
+    ...ffmpegLocationArgs(),
   ];
 
   if (isAudio) {
@@ -84,6 +89,13 @@ export async function POST(req: Request) {
 
       const proc = spawn(ytDlpPath(), args);
       let stderr = '';
+      proc.on('error', (err) => {
+        console.error('[clypt] failed to spawn yt-dlp:', err);
+        clearTimeout(timeout);
+        clearInterval(ping);
+        emit({ type: 'error', message: `Cannot run yt-dlp: ${err.message}` });
+        try { controller.close(); } catch {}
+      });
       let outputPath = '';
 
       let stdoutBuf = '';
@@ -114,14 +126,18 @@ export async function POST(req: Request) {
         }
       });
 
+      // Keeps the SSE connection alive through proxies (Railway) during long downloads/re-encodes.
+      const ping = setInterval(() => emit({ type: 'ping' }), 15000);
       const timeout = setTimeout(() => {
         proc.kill();
+        clearInterval(ping);
         emit({ type: 'error', message: 'Download timed out (10 min limit)' });
         try { controller.close(); } catch {}
       }, 10 * 60 * 1000);
 
       proc.on('close', async (code) => {
         clearTimeout(timeout);
+        clearInterval(ping);
 
         if (code === 0 && outputPath && fs.existsSync(outputPath)) {
           let finalPath = outputPath;
@@ -140,6 +156,15 @@ export async function POST(req: Request) {
             }
           }
 
+          if (format === 'mp4') {
+            emit({ type: 'progress', percent: 95, speed: '—', eta: 'Optimizing…', size: '' });
+            try {
+              finalPath = await ensureQuickTimeCompatible(finalPath, { whatsapp: !!whatsapp });
+            } catch (err) {
+              console.error('[clypt] H.264 re-encode failed, serving original:', err);
+            }
+          }
+
           const filename = path.basename(finalPath);
           const metaPath = path.join(tmpDir, `clypt-meta-${jobId}.json`);
           try {
@@ -148,8 +173,8 @@ export async function POST(req: Request) {
 
           emit({ type: 'complete', jobId, filename });
         } else {
-          const errLine = stderr.split('\n').find(l => l.includes('ERROR:'));
-          const msg = errLine ? errLine.replace(/.*ERROR:\s*/, '') : 'Download failed';
+          const msg = ytDlpErrorMessage(stderr, code === 0 ? 'yt-dlp finished but produced no output file' : `Download failed (exit ${code})`);
+          console.error(`[clypt] yt-dlp exited ${code} for ${url}\n${stderr.slice(-2000)}`);
           emit({ type: 'error', message: msg });
         }
 
@@ -158,6 +183,7 @@ export async function POST(req: Request) {
 
       req.signal.addEventListener('abort', () => {
         clearTimeout(timeout);
+        clearInterval(ping);
         try { proc.kill(); } catch {}
         try { controller.close(); } catch {}
       });

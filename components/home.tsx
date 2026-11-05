@@ -1,5 +1,5 @@
 "use client"
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { API_BASE } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import {
   AlertCircle, Download, Film, Music, Link as LinkIcon, DownloadCloud,
-  Sparkles, Subtitles, ListVideo, Globe, Clipboard,
+  Sparkles, Subtitles, ListVideo, Clipboard,
   History, Trash2, X, ChevronDown, ChevronUp, Scissors,
   Eye, ThumbsUp, CalendarDays, Info, FileText, QrCode, Image, Play, Clock,
 } from 'lucide-react';
@@ -42,6 +42,7 @@ interface VideoInfo {
   description?: string | null;
   likeCount?: number | null;
   formats: { formatId: string; quality: string; ext: string; filesize?: number | null }[];
+  recommended?: { formatId: string; label: string; height: number | null; sizeBytes: number | null };
   error?: string | null;
 }
 
@@ -57,14 +58,6 @@ const AUDIO_QUALITY_OPTIONS: { value: AudioQuality; label: string }[] = [
   { value: 'best', label: 'Best quality' }, { value: '320k', label: '320 kbps' },
   { value: '192k', label: '192 kbps' }, { value: '128k', label: '128 kbps' },
 ];
-const PLATFORM_GROUPS = [
-  { category: 'Social Media', color: 'bg-muted/50 text-muted-foreground border-border/50', platforms: ['YouTube', 'TikTok', 'Instagram', 'Twitter / X', 'Facebook', 'Reddit', 'LinkedIn', 'Threads', 'Snapchat', 'Pinterest', 'Tumblr', 'Mastodon'] },
-  { category: 'Video Platforms', color: 'bg-muted/50 text-muted-foreground border-border/50', platforms: ['Vimeo', 'Twitch', 'Dailymotion', 'Loom', 'Streamable', 'Bilibili', 'Niconico', 'Rumble', 'Odysee', 'PeerTube', 'Kick', 'Floatplane'] },
-  { category: 'Music & Podcasts', color: 'bg-muted/50 text-muted-foreground border-border/50', platforms: ['SoundCloud', 'Bandcamp', 'Mixcloud', 'Audiomack', 'Spotify (clips)', 'Deezer', 'Podbean', 'Buzzsprout'] },
-  { category: 'News & Media', color: 'bg-muted/50 text-muted-foreground border-border/50', platforms: ['BBC iPlayer', 'The Guardian', 'Reuters', 'Bloomberg', 'Vice', 'Vox', 'CNN', 'NBC News', 'Sky News', 'Arte', 'France TV'] },
-  { category: 'Other', color: 'bg-muted/50 text-muted-foreground border-border/50', platforms: ['9GAG', 'Flickr', 'Imgur', 'Gfycat', 'Giphy', 'Patreon', 'Substack', 'Weibo', 'VK', '+ 1000 more'] },
-];
-
 function isAudioFormat(fmt: OutputFormat): boolean { return ['mp3', 'm4a', 'wav', 'ogg'].includes(fmt); }
 function formatDuration(seconds?: number | null) {
   if (!seconds) return null;
@@ -95,8 +88,9 @@ export function Home() {
   const [format, setFormat] = useState<OutputFormat>('mp4');
   const [audioQuality, setAudioQuality] = useState<AudioQuality>('best');
   const [subtitles, setSubtitles] = useState(false);
+  const [whatsapp, setWhatsapp] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [allowPlaylist, setAllowPlaylist] = useState(false);
-  const [showAllPlatforms, setShowAllPlatforms] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedFormats, setSelectedFormats] = useState<Record<string, string>>({});
   const [showDetails, setShowDetails] = useState<Record<string, boolean>>({});
@@ -130,6 +124,14 @@ export function Home() {
   const { searches, addSearch, clearSearches } = useRecentSearches();
   const { toast } = useToast();
 
+  useEffect(() => {
+    try { setWhatsapp(window.localStorage.getItem('clypt-whatsapp-mode') === '1'); } catch {}
+  }, []);
+  const toggleWhatsapp = (v: boolean) => {
+    setWhatsapp(v);
+    try { window.localStorage.setItem('clypt-whatsapp-mode', v ? '1' : '0'); } catch {}
+  };
+
   const urlCount = useMemo(() => urlsInput.split('\n').map(u => u.trim()).filter(u => u.length > 0).length, [urlsInput]);
 
   const appendUrls = useCallback((incoming: string[]) => {
@@ -138,24 +140,51 @@ export function Home() {
     setUrlsInput(prev => { const existing = prev.trim(); return existing ? `${existing}\n${cleaned.join('\n')}` : cleaned.join('\n'); });
   }, []);
 
+  const parseUrls = () => urlsInput.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+
+  const fetchInfo = async (urls: string[]): Promise<VideoInfo[]> => {
+    const res = await fetch(`${API_BASE}/api/videos/fetch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ urls: [...new Set(urls)], format, audioQuality: isAudioFormat(format) ? audioQuality : undefined, subtitles: !isAudioFormat(format) ? subtitles : undefined, allowPlaylist, whatsapp }),
+    });
+    if (!res.ok) throw new Error(`Server error (${res.status}). Please try again.`);
+    return res.json();
+  };
+
+  // Advanced: show the per-video cards so quality/trim/schedule can be changed before queueing.
   const handleFetch = async () => {
-    const urls = urlsInput.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+    const urls = parseUrls();
     if (urls.length === 0) { toast({ title: 'No URLs provided', description: 'Please enter at least one valid URL.', variant: 'destructive' }); return; }
     setPendingCount(urls.length);
     setIsPending(true);
     try {
-      const res = await fetch(`${API_BASE}/api/videos/fetch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls: [...new Set(urls)], format, audioQuality: isAudioFormat(format) ? audioQuality : undefined, subtitles: !isAudioFormat(format) ? subtitles : undefined, allowPlaylist }),
-      });
-      const data: VideoInfo[] = await res.json();
+      const data = await fetchInfo(urls);
       setResults(data);
       addSearch(urls);
       const newSelections: Record<string, string> = {};
-      data.forEach(video => { if (video.formats?.length > 0) newSelections[video.url] = video.formats[0].formatId; });
+      data.forEach(video => { if (video.formats?.length > 0) newSelections[video.url] = video.recommended?.formatId ?? video.formats[0].formatId; });
       setSelectedFormats(newSelections);
       setTrimModalUrl(null); setTrimStart({}); setTrimEnd({}); setShowDetails({}); setShowRecentSearches(false); setScheduleModalUrl(null);
+    } catch (err: unknown) {
+      toast({ title: 'Failed to fetch', description: err instanceof Error ? err.message : 'An error occurred.', variant: 'destructive' });
+    } finally { setIsPending(false); }
+  };
+
+  // Primary action: fetch info, queue every video with its recommended quality; the file saves itself when ready.
+  const handleDownloadNow = async () => {
+    const urls = parseUrls();
+    if (urls.length === 0) { toast({ title: 'No URLs provided', description: 'Please enter at least one valid URL.', variant: 'destructive' }); return; }
+    setPendingCount(urls.length);
+    setIsPending(true);
+    setResults([]);
+    try {
+      const data = await fetchInfo(urls);
+      addSearch(urls);
+      const ok = data.filter(v => !v.error && v.formats?.length > 0);
+      ok.forEach(v => queueDownload(v, v.recommended?.formatId ?? v.formats[0].formatId));
+      setResults(data.filter(v => v.error || !v.formats?.length));
+      if (ok.length === data.length) setUrlsInput('');
     } catch (err: unknown) {
       toast({ title: 'Failed to fetch', description: err instanceof Error ? err.message : 'An error occurred.', variant: 'destructive' });
     } finally { setIsPending(false); }
@@ -204,15 +233,15 @@ export function Home() {
     toast({ title: 'Downloading thumbnail…' });
   };
 
-  const queueDownload = (video: VideoInfo) => {
-    const formatId = selectedFormats[video.url];
+  const queueDownload = (video: VideoInfo, overrideFormatId?: string) => {
+    const formatId = overrideFormatId ?? selectedFormats[video.url];
     if (!formatId) return;
     const rawTime = scheduleTime[video.url];
     const scheduledFor = rawTime ? new Date(rawTime).getTime() : undefined;
     const isScheduled = !!scheduledFor && scheduledFor > Date.now();
-    addToQueue({ url: video.url, format, formatId, audioQuality: isAudioFormat(format) ? audioQuality : undefined, startTime: trimStart[video.url] || undefined, endTime: trimEnd[video.url] || undefined, title: video.title, thumbnail: video.thumbnail ?? null, scheduledFor });
+    addToQueue({ url: video.url, format, formatId, audioQuality: isAudioFormat(format) ? audioQuality : undefined, startTime: trimStart[video.url] || undefined, endTime: trimEnd[video.url] || undefined, whatsapp, title: video.title, thumbnail: video.thumbnail ?? null, scheduledFor });
     addItem({ url: video.url, title: video.title, thumbnail: video.thumbnail ?? null, uploader: video.uploader ?? null, format });
-    toast({ title: isScheduled ? 'Scheduled' : 'Added to queue', description: video.title });
+    toast({ title: isScheduled ? 'Scheduled' : 'Downloading…', description: video.title });
   };
 
   const handleQueueAll = () => {
@@ -223,7 +252,6 @@ export function Home() {
 
   const successfulCount = results.filter(v => !v.error).length;
   const isAudio = isAudioFormat(format);
-  const visibleGroups = showAllPlatforms ? PLATFORM_GROUPS : PLATFORM_GROUPS.slice(0, 2);
 
   return (
     <div className="w-full bg-background flex flex-col items-center relative overflow-x-hidden font-sans selection:bg-primary/20 selection:text-primary">
@@ -244,10 +272,7 @@ export function Home() {
             <DownloadCloud className="w-7 h-7 sm:w-8 sm:h-8 text-primary" strokeWidth={2.5} />
           </div>
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-foreground leading-none">Clypt</h1>
-          <p className="text-base sm:text-lg text-muted-foreground max-w-sm sm:max-w-md font-medium leading-snug">Paste your links. Choose your format. Download instantly.</p>
-          <div className="flex items-center gap-1.5 text-sm font-semibold text-primary bg-primary/8 px-3 py-1.5 rounded-full border border-primary/15">
-            <Globe className="w-3.5 h-3.5" />1,000+ supported websites
-          </div>
+          <p className="text-base sm:text-lg text-muted-foreground max-w-sm sm:max-w-md font-medium leading-snug">Paste a link. It downloads with the best quality automatically.</p>
         </div>
 
         {/* History panel */}
@@ -295,6 +320,7 @@ export function Home() {
                 </label>
                 <div className="flex items-center gap-1.5">
                   {urlCount > 0 && <span className="text-xs font-semibold text-muted-foreground bg-muted px-2 py-0.5 rounded-md">{urlCount} URL{urlCount !== 1 ? 's' : ''}</span>}
+                  {showAdvanced && (<>
                   {searches.length > 0 && (
                     <button onClick={() => setShowRecentSearches(v => !v)} className={`flex items-center gap-1.5 text-xs font-semibold transition-colors px-2.5 py-1 rounded-lg border ${showRecentSearches ? 'bg-primary/10 text-primary border-primary/20' : 'text-muted-foreground hover:text-primary bg-muted/50 hover:bg-primary/10 border-border/50'}`} title="Recent searches">
                       <Clock className="w-3 h-3" />Recent
@@ -310,6 +336,7 @@ export function Home() {
                     <FileText className="w-3 h-3" />Import
                   </button>
                   <input ref={fileInputRef} type="file" accept=".txt,text/plain" className="hidden" onChange={handleFileImport} />
+                  </>)}
                   <button onClick={handlePasteFromClipboard} className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-primary transition-colors bg-muted/50 hover:bg-primary/10 px-2.5 py-1 rounded-lg border border-border/50">
                     <Clipboard className="w-3 h-3" />Paste
                   </button>
@@ -344,6 +371,26 @@ export function Home() {
               </div>
             </div>
 
+            {/* WhatsApp mode */}
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-muted/30 border border-border/50 px-4 py-3">
+              <Label htmlFor="whatsapp" className="flex flex-col gap-0.5 cursor-pointer select-none">
+                <span className="text-sm font-bold">WhatsApp status mode</span>
+                <span className="text-xs font-normal text-muted-foreground">MP4 H.264, max 720p, under 16 MB</span>
+              </Label>
+              <Switch id="whatsapp" checked={whatsapp} onCheckedChange={toggleWhatsapp} />
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+              <Button onClick={handleDownloadNow} disabled={isPending || !urlsInput.trim()} className="h-12 px-8 rounded-xl font-bold shadow-md shadow-primary/25 hover:shadow-lg hover:shadow-primary/30 transition-all active:scale-[0.98] text-base w-full sm:flex-1">
+                {isPending ? <span className="flex items-center gap-2"><Sparkles className="w-4 h-4 animate-pulse shrink-0" />Working...</span> : <><Download className="w-4 h-4 mr-2 shrink-0" />{`Download${urlCount > 1 ? ` (${urlCount})` : ''}`}</>}
+              </Button>
+              <button onClick={() => setShowAdvanced(v => !v)} className="flex items-center justify-center gap-1 text-sm font-semibold text-muted-foreground hover:text-primary transition-colors h-10 px-3">
+                Advanced {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {showAdvanced && (
+              <div className="flex flex-col gap-6 pt-2 border-t border-border/40">
             {/* Format */}
             <div className="flex flex-col gap-3">
               <span className="text-xs font-bold uppercase tracking-wider text-foreground/70">Format</span>
@@ -395,9 +442,11 @@ export function Home() {
               </div>
             </div>
 
-            <Button onClick={handleFetch} disabled={isPending || !urlsInput.trim()} className="h-11 px-6 rounded-xl font-bold shadow-md shadow-primary/25 hover:shadow-lg hover:shadow-primary/30 transition-all active:scale-[0.98] text-sm w-full sm:w-auto self-end">
-              {isPending ? <span className="flex items-center gap-2"><Sparkles className="w-4 h-4 animate-pulse shrink-0" />Fetching...</span> : `Fetch Media${urlCount > 1 ? ` (${urlCount})` : ''}`}
-            </Button>
+                <Button variant="outline" onClick={handleFetch} disabled={isPending || !urlsInput.trim()} className="h-10 px-5 rounded-xl font-semibold text-sm self-start">
+                  Choose quality / trim / schedule…
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -419,7 +468,7 @@ export function Home() {
                     <Download className="w-4 h-4 text-primary" />
                   </div>
                   <div>
-                    <h2 className="text-base font-bold text-foreground leading-tight">Ready to Download</h2>
+                    <h2 className="text-base font-bold text-foreground leading-tight">{successfulCount === 0 ? 'Could not download' : 'Ready to Download'}</h2>
                     <p className="text-xs text-muted-foreground leading-tight">
                       {successfulCount} video{successfulCount !== 1 ? 's' : ''} found
                       {results.length !== successfulCount ? ` · ${results.length - successfulCount} error${results.length - successfulCount !== 1 ? 's' : ''}` : ''}
@@ -528,26 +577,6 @@ export function Home() {
               </div>
             </div>
           )}
-
-          {/* Supported platforms */}
-          <div className="flex flex-col gap-4 pt-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Supported Platforms</h2>
-              <button onClick={() => setShowAllPlatforms(v => !v)} className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-primary transition-colors">
-                {showAllPlatforms ? <><ChevronUp className="w-3.5 h-3.5" />Show less</> : <><ChevronDown className="w-3.5 h-3.5" />Show all</>}
-              </button>
-            </div>
-            <div className="flex flex-col gap-3">
-              {visibleGroups.map(group => (
-                <div key={group.category} className="flex flex-col gap-2">
-                  <p className="text-xs font-semibold text-muted-foreground">{group.category}</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {group.platforms.map(p => <span key={p} className={`text-xs font-medium px-2.5 py-1 rounded-lg border ${group.color}`}>{p}</span>)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
 
