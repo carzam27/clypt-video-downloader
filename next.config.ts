@@ -15,7 +15,8 @@ const nextConfig: NextConfig = {
     '/api/videos/fetch': ['./bin/**'],
   },
   ...(process.env.NODE_ENV === 'development' && {
-    allowedDevOrigins: ['*.replit.dev', '*.pike.replit.dev', '*.repl.co'],
+    // LAN ranges let a phone on the same Wi-Fi open the dev server (otherwise /_next/* is blocked with 403).
+    allowedDevOrigins: ['*.replit.dev', '*.pike.replit.dev', '*.repl.co', '192.168.*.*', '10.*.*.*', '172.*.*.*', '*.local'],
   }),
 };
 
