@@ -19,9 +19,9 @@ COPY package.json package-lock.json* pnpm-lock.yaml* ./
 
 # Instalar dependencias (usa pnpm si existe, si no npm)
 RUN if [ -f pnpm-lock.yaml ]; then \
-      corepack enable && pnpm install --frozen-lockfile; \
+      corepack enable && pnpm install --frozen-lockfile --ignore-scripts; \
     else \
-      npm ci; \
+      npm ci --ignore-scripts; \
     fi
 
 COPY . .
