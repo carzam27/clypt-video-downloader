@@ -90,6 +90,7 @@ export function Home() {
   const [subtitles, setSubtitles] = useState(false);
   const [whatsapp, setWhatsapp] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [errorOpen, setErrorOpen] = useState<Record<string, boolean>>({});
   const [allowPlaylist, setAllowPlaylist] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedFormats, setSelectedFormats] = useState<Record<string, string>>({});
@@ -532,7 +533,7 @@ export function Home() {
                     <Card key={`${video.url}-${idx}`} className="overflow-hidden border-border/50 bg-card shadow-sm hover:shadow-md transition-all duration-300 rounded-2xl group">
                       <div className="flex flex-col sm:flex-row">
                         {/* Thumbnail */}
-                        <div className="w-full sm:w-52 lg:w-60 h-44 sm:h-auto bg-muted/20 relative flex-shrink-0 border-b sm:border-b-0 sm:border-r border-border/40 overflow-hidden">
+                        <div className={`${video.error ? 'hidden sm:block ' : ''}w-full sm:w-52 lg:w-60 h-44 sm:h-auto bg-muted/20 relative flex-shrink-0 border-b sm:border-b-0 sm:border-r border-border/40 overflow-hidden`}>
                           {video.thumbnail ? <img src={video.thumbnail} alt={video.title || 'Thumbnail'} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" /> : <div className="w-full h-full flex items-center justify-center text-muted-foreground"><Film className="w-10 h-10 opacity-20" /></div>}
                           {!video.error && dur && <div className="absolute bottom-2 right-2 bg-black/70 backdrop-blur-md text-white text-xs px-2 py-0.5 rounded-md font-mono font-medium">{dur}</div>}
                           {!video.error && (
@@ -548,7 +549,8 @@ export function Home() {
                           {video.error ? (
                             <div className="flex items-start gap-3 bg-destructive/5 p-3 rounded-xl border border-destructive/10">
                               <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-destructive" />
-                              <div className="space-y-1 min-w-0"><h3 className="font-semibold text-xs truncate text-destructive/80">{video.url}</h3><p className="text-sm font-medium text-destructive">{video.error}</p></div>
+                              <div className="space-y-1 min-w-0"><h3 className="font-semibold text-xs truncate text-destructive/80">{video.url}</h3><p className={`text-sm font-medium text-destructive break-words ${errorOpen[video.url] ? '' : 'line-clamp-3'}`}>{video.error}</p>
+                                {video.error.length > 140 && <button onClick={() => setErrorOpen(prev => ({ ...prev, [video.url]: !prev[video.url] }))} className="text-xs font-semibold text-destructive/70 hover:text-destructive underline underline-offset-2">{errorOpen[video.url] ? 'Hide details' : 'Show full error'}</button>}</div>
                             </div>
                           ) : (
                             <>
