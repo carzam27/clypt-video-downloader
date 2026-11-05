@@ -84,7 +84,20 @@ The app will be available at `http://localhost:3000`.
 | `YTDLP_PATH` | No | `yt-dlp` | Absolute path to the yt-dlp binary |
 | `BASE_PATH` | No | `` (empty) | Sub-path prefix, e.g. `/clypt` (leave empty for Vercel/Railway) |
 | `FFMPEG_PATH` | No | `ffmpeg` | Absolute path to the ffmpeg binary |
+| `CLYPT_API_TOKEN` | No | — | Enables `POST /api/videos/quick` (iOS Shortcuts); sent as `Authorization: Bearer <token>` |
 | `YTDLP_EXTRA_ARGS` | No | — | Extra yt-dlp flags, e.g. `--cookies /app/cookies.txt` when a site blocks the server IP |
+
+---
+
+## iOS Shortcuts (share a link, get the video)
+
+`POST /api/videos/quick` downloads a link in a single request and returns the mp4 (H.264/AAC, WhatsApp-friendly by default). Set `CLYPT_API_TOKEN` on the server, then build a shortcut:
+
+1. **Receive** *URLs* from the Share Sheet (enable "Show in Share Sheet").
+2. **Get Contents of URL** — URL `https://<your-app>/api/videos/quick`, Method `POST`, Header `Authorization: Bearer <token>`, Request Body `File` with the *Shortcut Input* (plain text is accepted) or `JSON` with `url`. Add `whatsapp: false` to skip the 720p / 16 MB cap.
+3. **Save to Photo Album**.
+
+Errors come back as JSON `{ "error": "..." }` with a 4xx/5xx status.
 
 ---
 
