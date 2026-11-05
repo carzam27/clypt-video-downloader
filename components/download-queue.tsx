@@ -66,7 +66,7 @@ export function DownloadQueue({
   onConcurrencyChange,
   activeCount,
 }: DownloadQueueProps) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   if (items.length === 0) return null;
 
   const doneCount = items.filter(i => i.status === 'complete' || i.status === 'error').length;
