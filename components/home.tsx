@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import {
   AlertCircle, Download, Film, Music, Link as LinkIcon, DownloadCloud,
-  Sparkles, Subtitles, ListVideo, Clipboard,
+  Sparkles, Loader2, Subtitles, ListVideo, Clipboard,
   History, Trash2, X, ChevronDown, ChevronUp, Scissors,
   Eye, ThumbsUp, CalendarDays, Info, FileText, QrCode, Image, Play, Clock,
 } from 'lucide-react';
@@ -132,6 +132,13 @@ export function Home() {
     try { window.localStorage.setItem('clypt-whatsapp-mode', v ? '1' : '0'); } catch {}
   };
 
+  const completedCount = queueItems.filter(i => i.status === 'complete').length;
+  const prevCompleted = useRef(0);
+  useEffect(() => {
+    if (completedCount > prevCompleted.current) toast({ title: 'Ready — saving to your device', description: 'Check your Downloads / Files app.' });
+    prevCompleted.current = completedCount;
+  }, [completedCount, toast]);
+
   const urlCount = useMemo(() => urlsInput.split('\n').map(u => u.trim()).filter(u => u.length > 0).length, [urlsInput]);
 
   const appendUrls = useCallback((incoming: string[]) => {
@@ -249,6 +256,20 @@ export function Home() {
       if (selectedFormats[video.url]) queueDownload(video);
     });
   };
+
+  // Progress from the click until the file is ready (info fetch -> download -> optimize -> auto-save).
+  const busyItems = queueItems.filter(i => i.status === 'queued' || i.status === 'pending' || i.status === 'downloading');
+  const showProgress = isPending || busyItems.length > 0;
+  const avgPercent = busyItems.length ? busyItems.reduce((n, i) => n + i.percent, 0) / busyItems.length : 0;
+  const lead = busyItems.find(i => i.status === 'downloading') ?? busyItems[0];
+  const progressLabel = isPending
+    ? 'Fetching video info…'
+    : !lead ? ''
+    : busyItems.length > 1 ? `Downloading ${busyItems.length} videos…`
+    : lead.eta && /[a-z]/i.test(lead.eta) ? lead.eta
+    : lead.status === 'downloading' && lead.percent > 0 ? `Downloading ${Math.round(lead.percent)}%${lead.speed ? ` · ${lead.speed}` : ''}${lead.eta ? ` · ETA ${lead.eta}` : ''}`
+    : 'Starting…';
+  const indeterminate = isPending || avgPercent <= 0;
 
   const successfulCount = results.filter(v => !v.error).length;
   const isAudio = isAudioFormat(format);
@@ -382,12 +403,28 @@ export function Home() {
 
             <div className="flex flex-row gap-2 sm:gap-3 items-center">
               <Button onClick={handleDownloadNow} disabled={isPending || !urlsInput.trim()} className="h-12 px-8 rounded-xl font-bold shadow-md shadow-primary/25 hover:shadow-lg hover:shadow-primary/30 transition-all active:scale-[0.98] text-base flex-1">
-                {isPending ? <span className="flex items-center gap-2"><Sparkles className="w-4 h-4 animate-pulse shrink-0" />Working...</span> : <><Download className="w-4 h-4 mr-2 shrink-0" />{`Download${urlCount > 1 ? ` (${urlCount})` : ''}`}</>}
+                {isPending ? <span className="flex items-center gap-2"><Sparkles className="w-4 h-4 animate-pulse shrink-0" />Fetching...</span> : <><Download className="w-4 h-4 mr-2 shrink-0" />{`Download${urlCount > 1 ? ` (${urlCount})` : ''}`}</>}
               </Button>
               <button onClick={() => setShowAdvanced(v => !v)} className="flex items-center justify-center gap-1 text-sm font-semibold text-muted-foreground hover:text-primary transition-colors h-12 sm:h-10 px-3 shrink-0">
                 Advanced {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
               </button>
             </div>
+
+            {showProgress && (
+              <div className="flex flex-col gap-2 rounded-xl bg-primary/5 border border-primary/15 px-3 py-3" role="status" aria-live="polite">
+                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
+                  <span className="truncate">{progressLabel}</span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-primary/15 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full bg-primary transition-all duration-300 ${indeterminate ? 'w-1/3 animate-pulse' : ''}`}
+                    style={indeterminate ? undefined : { width: `${Math.min(100, Math.max(3, avgPercent))}%` }}
+                  />
+                </div>
+                {!isPending && lead && busyItems.length === 1 && <p className="text-xs text-muted-foreground truncate">{lead.title}</p>}
+              </div>
+            )}
 
             {showAdvanced && (
               <div className="flex flex-col gap-6 pt-2 border-t border-border/40">
