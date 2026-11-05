@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port $PORT",
+    "dev": "next dev --port ${PORT:-3000}",
     "build": "next build",
-    "start": "next start --port $PORT",
+    "start": "next start --port ${PORT:-3000}",
     "postinstall": "node scripts/install-ytdlp.mjs && node scripts/install-ffmpeg.mjs"
   },
   "dependencies": {

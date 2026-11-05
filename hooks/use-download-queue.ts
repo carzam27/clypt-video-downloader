@@ -30,6 +30,7 @@ export interface QueueParams {
   audioQuality?: string;
   startTime?: string;
   endTime?: string;
+  whatsapp?: boolean;
   title: string;
   thumbnail: string | null;
   scheduledFor?: number;
@@ -44,6 +45,17 @@ interface StoredQueue {
   version: 2;
   concurrencyLimit: number;
   items: QueueItem[];
+}
+
+/** Saves the finished file via a hidden link (window.open would be blocked outside a user gesture). */
+function triggerFileDownload(jobId: string) {
+  const a = document.createElement('a');
+  a.href = `${API_BASE}/api/videos/download/${jobId}/file`;
+  a.download = '';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => a.remove(), 1000);
 }
 
 function makeQueueId() {
@@ -160,6 +172,7 @@ export function useDownloadQueue() {
           audioQuality: params.audioQuality,
           startTime: params.startTime,
           endTime: params.endTime,
+          whatsapp: params.whatsapp,
         }),
         signal: controller.signal,
       });
@@ -198,6 +211,7 @@ export function useDownloadQueue() {
             } else if (event.type === 'complete') {
               terminalEventSeen = true;
               completedJobId = event.jobId as string;
+              triggerFileDownload(completedJobId);
               setItems(prev => prev.map(i =>
                 i.jobId === tempId
                   ? { ...i, jobId: completedJobId, status: 'complete', percent: 100, speed: '', eta: '', completedAt: Date.now() }
@@ -302,9 +316,7 @@ export function useDownloadQueue() {
     return () => clearInterval(id);
   }, [concurrencyLimit, hasHydrated, items, startJob]);
 
-  const downloadFile = useCallback((jobId: string) => {
-    window.open(`${API_BASE}/api/videos/download/${jobId}/file`, '_blank');
-  }, []);
+  const downloadFile = useCallback((jobId: string) => triggerFileDownload(jobId), []);
 
   const removeItem = useCallback((jobId: string) => {
     abortControllers.current.get(jobId)?.abort();

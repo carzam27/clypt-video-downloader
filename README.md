@@ -82,7 +82,9 @@ The app will be available at `http://localhost:3000`.
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `YTDLP_PATH` | No | `yt-dlp` | Absolute path to the yt-dlp binary |
-| `BASE_PATH` | No | `` (empty) | Sub-path prefix, e.g. `/clypt` (leave empty for Vercel) |
+| `BASE_PATH` | No | `` (empty) | Sub-path prefix, e.g. `/clypt` (leave empty for Vercel/Railway) |
+| `FFMPEG_PATH` | No | `ffmpeg` | Absolute path to the ffmpeg binary |
+| `YTDLP_EXTRA_ARGS` | No | — | Extra yt-dlp flags, e.g. `--cookies /app/cookies.txt` when a site blocks the server IP |
 
 ---
 
@@ -149,8 +151,7 @@ artifacts/clypt-next/
 │   └── use-recent-searches.ts     # localStorage recent URLs
 ├── lib/
 │   ├── api.ts                     # API base URL helper
-│   ├── ytdlp.ts                   # yt-dlp path + format helpers
-│   └── jobs-store.ts              # (legacy, kept for reference)
+│   └── ytdlp.ts                   # yt-dlp path, format selection, ffmpeg helpers
 ├── .env.example
 ├── vercel.json
 └── next.config.ts
