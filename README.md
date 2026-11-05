@@ -85,6 +85,7 @@ The app will be available at `http://localhost:3000`.
 | `BASE_PATH` | No | `` (empty) | Sub-path prefix, e.g. `/clypt` (leave empty for Vercel/Railway) |
 | `FFMPEG_PATH` | No | `ffmpeg` | Absolute path to the ffmpeg binary |
 | `CLYPT_API_TOKEN` | No | — | Enables `POST /api/videos/quick` (iOS Shortcuts); sent as `Authorization: Bearer <token>` |
+| `CLYPT_COOKIES` | No | — | Netscape `cookies.txt` (raw or base64) for logged-in sessions; fixes Instagram/YouTube "bot check" / "empty media response" errors on hosting IPs |
 | `YTDLP_EXTRA_ARGS` | No | — | Extra yt-dlp flags, e.g. `--cookies /app/cookies.txt` when a site blocks the server IP |
 
 ---

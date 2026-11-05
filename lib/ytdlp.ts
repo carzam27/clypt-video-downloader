@@ -101,14 +101,34 @@ export function ffmpegPath(): string {
   return 'ffmpeg';
 }
 
+const COOKIES_FILE = path.join(os.tmpdir(), 'ytdlp-cookies.txt'); // not `clypt-*`: cleanOldTempFiles would delete it
+let cookiesWritten = false;
+
+/**
+ * CLYPT_COOKIES holds a Netscape cookies.txt (raw or base64) so logged-in sessions can be used on hosts with no
+ * persistent disk. It is written once per process to tmp with owner-only permissions. Returns the file path or null.
+ */
+function cookiesFile(): string | null {
+  const raw = process.env.CLYPT_COOKIES?.trim();
+  if (!raw) return null;
+  if (!cookiesWritten) {
+    const text = raw.includes('\t') || raw.startsWith('#') ? raw : Buffer.from(raw, 'base64').toString('utf8');
+    fs.writeFileSync(COOKIES_FILE, text.endsWith('\n') ? text : text + '\n', { mode: 0o600 });
+    cookiesWritten = true;
+  }
+  return COOKIES_FILE;
+}
+
 /**
  * Flags shared by every yt-dlp invocation.
  * - `--js-runtimes node`: recent yt-dlp needs a JS runtime to solve YouTube challenges (node is always present here).
- * - YTDLP_EXTRA_ARGS: space-separated extra flags, e.g. `--cookies /app/cookies.txt` to get past bot checks on datacenter IPs.
+ * - CLYPT_COOKIES: logged-in cookies for sites that block datacenter IPs (Instagram, YouTube).
+ * - YTDLP_EXTRA_ARGS: space-separated extra flags.
  */
 export function ytDlpCommonArgs(): string[] {
   const extra = (process.env.YTDLP_EXTRA_ARGS ?? '').split(/\s+/).filter(Boolean);
-  return ['--js-runtimes', 'node', ...extra];
+  const cookies = cookiesFile();
+  return ['--js-runtimes', 'node', ...(cookies ? ['--cookies', cookies] : []), ...extra];
 }
 
 /**
@@ -121,7 +141,7 @@ export function ffmpegLocationArgs(): string[] {
 }
 
 const ERROR_HINTS: [RegExp, string][] = [
-  [/sign in to confirm|not a bot|cookies/i, 'The site is blocking this server (bot check). Configure cookies via YTDLP_EXTRA_ARGS, e.g. "--cookies /app/cookies.txt".'],
+  [/sign in to confirm|not a bot|cookies|empty media response|login required/i, 'The site wants a logged-in session from this server. Set CLYPT_COOKIES (Netscape cookies.txt, raw or base64) on the server.'],
   [/ffmpeg|ffprobe/i, 'ffmpeg was not found on the server.'],
   [/private|login required|members-only|requires authentication/i, 'This video is private or needs a login.'],
   [/unsupported url/i, 'This link is not supported.'],
